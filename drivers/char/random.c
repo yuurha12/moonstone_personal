@@ -494,6 +494,7 @@ struct entropy_store {
 	const struct poolinfo *poolinfo;
 	__u32 *pool;
 	const char *name;
+	struct entropy_store *pull;
 
 	/* read-write data: */
 	spinlock_t lock;
@@ -513,15 +514,16 @@ static ssize_t _extract_entropy(struct entropy_store *r, void *buf,
 static void crng_reseed(struct crng_state *crng, struct entropy_store *r);
 static __u32 input_pool_data[INPUT_POOL_WORDS] __latent_entropy;
 
-static struct entropy_store input_pool = { .poolinfo = &poolinfo_table[0],
-					   .name = "input",
-					   .lock = __SPIN_LOCK_UNLOCKED(
-						   input_pool.lock),
-					   .pool = input_pool_data };
+static struct entropy_store input_pool = {
+	.poolinfo = &poolinfo_table[0],
+	.name = "input",
+	.lock = __SPIN_LOCK_UNLOCKED(input_pool.lock),
+	.pool = input_pool_data
+};
 
-static __u32 const twist_table[8] = { 0x00000000, 0x3b6e20c8, 0x76dc4190,
-				      0x4db26158, 0xedb88320, 0xd6d6a3e8,
-				      0x9b64c2b0, 0xa00ae278 };
+static __u32 const twist_table[8] = {
+	0x00000000, 0x3b6e20c8, 0x76dc4190, 0x4db26158,
+	0xedb88320, 0xd6d6a3e8, 0x9b64c2b0, 0xa00ae278 };
 
 /*
  * This function adds bytes into the entropy "pool".  It does not
@@ -745,27 +747,6 @@ retry:
 			crng_reseed(&primary_crng, r);
 			entropy_bits = ENTROPY_BITS(r);
 		}
-
-		/* initialize the blocking pool if necessary */
-		if (entropy_bits >= random_read_wakeup_bits &&
-		    !other->initialized) {
-			schedule_work(&other->push_work);
-			return;
-		}
-
-		/* should we wake readers? */
-		if (entropy_bits >= random_read_wakeup_bits &&
-		    wq_has_sleeper(&random_read_wait)) {
-			wake_up_interruptible(&random_read_wait);
-		}
-		/* If the input pool is getting full, and the blocking
-		 * pool has room, send some entropy to the blocking
-		 * pool.
-		 */
-		if (!work_pending(&other->push_work) &&
-		    (ENTROPY_BITS(r) > 6 * r->poolinfo->poolbytes) &&
-		    (ENTROPY_BITS(other) <= 6 * other->poolinfo->poolbytes))
-			schedule_work(&other->push_work);
 	}
 }
 
@@ -1367,6 +1348,41 @@ EXPORT_SYMBOL_GPL(add_disk_randomness);
  *********************************************************************/
 
 /*
+ * This utility inline function is responsible for transferring entropy
+ * from the primary pool to the secondary extraction pool. We make
+ * sure we pull enough for a 'catastrophic reseed'.
+ */
+static void _xfer_secondary_pool(struct entropy_store *r, size_t nbytes);
+static void xfer_secondary_pool(struct entropy_store *r, size_t nbytes)
+{
+	if (!r->pull ||
+	    r->entropy_count >= (nbytes << (ENTROPY_SHIFT + 3)) ||
+	    r->entropy_count > r->poolinfo->poolfracbits)
+		return;
+
+	_xfer_secondary_pool(r, nbytes);
+}
+
+static void _xfer_secondary_pool(struct entropy_store *r, size_t nbytes)
+{
+	__u32	tmp[OUTPUT_POOL_WORDS];
+
+	int bytes = nbytes;
+
+	/* pull at least as much as a wakeup */
+	bytes = max_t(int, bytes, random_read_wakeup_bits / 8);
+	/* but never more than the buffer size */
+	bytes = min_t(int, bytes, sizeof(tmp));
+
+	trace_xfer_secondary_pool(r->name, bytes * 8, nbytes * 8,
+				  ENTROPY_BITS(r), ENTROPY_BITS(r->pull));
+	bytes = extract_entropy(r->pull, tmp, bytes,
+				random_read_wakeup_bits / 8, 0);
+	mix_pool_bytes(r, tmp, bytes);
+	credit_entropy_bits(r, bytes*8);
+}
+
+/*
  * This function decides how many bytes to actually take from the
  * given pool, and also debits the entropy count accordingly.
  */
@@ -1540,8 +1556,8 @@ static ssize_t extract_entropy(struct entropy_store *r, void *buf,
 	return _extract_entropy(r, buf, nbytes, fips_enabled);
 }
 
-#define warn_unseeded_randomness(previous)                                     \
-	_warn_unseeded_randomness(__func__, (void *)_RET_IP_, (previous))
+#define warn_unseeded_randomness(previous) \
+	_warn_unseeded_randomness(__func__, (void *) _RET_IP_, (previous))
 
 static void _warn_unseeded_randomness(const char *func_name, void *caller,
 				      void **previous)
