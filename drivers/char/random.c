@@ -2129,15 +2129,6 @@ struct ctl_table random_table[] = {
 		.data = &input_pool.entropy_count,
 	},
 	{
-		.procname = "write_wakeup_threshold",
-		.data = &random_write_wakeup_bits,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = proc_dointvec_minmax,
-		.extra1 = &min_write_thresh,
-		.extra2 = &max_write_thresh,
-	},
-	{
 		.procname = "urandom_min_reseed_secs",
 		.data = &random_min_urandom_seed,
 		.maxlen = sizeof(int),
