@@ -1846,15 +1846,14 @@ static ssize_t urandom_read_nowarn(struct file *file, char __user *buf,
 	return ret;
 }
 
-static ssize_t
-random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+static ssize_t random_read(struct file *file, char __user *buf, size_t nbytes,
+			   loff_t *ppos)
 {
 	return _random_read(file->f_flags & O_NONBLOCK, buf, nbytes);
 }
 
-static ssize_t
-urandom_read_nowarn(struct file *file, char __user *buf, size_t nbytes,
-		    loff_t *ppos)
+static ssize_t urandom_read_nowarn(struct file *file, char __user *buf,
+				   size_t nbytes, loff_t *ppos)
 {
 	int ret;
 
@@ -1864,8 +1863,8 @@ urandom_read_nowarn(struct file *file, char __user *buf, size_t nbytes,
 	return ret;
 }
 
-static ssize_t
-urandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+static ssize_t urandom_read(struct file *file, char __user *buf, size_t nbytes,
+			    loff_t *ppos)
 {
 	unsigned long flags;
 	static int maxwarn = 10;
@@ -2037,6 +2036,9 @@ SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count, unsigned int,
 
 	if (count > INT_MAX)
 		count = INT_MAX;
+
+	if (flags & GRND_RANDOM)
+		return _random_read(flags & GRND_NONBLOCK, buf, count);
 
 	if (!(flags & GRND_INSECURE) && !crng_ready()) {
 		if (flags & GRND_NONBLOCK)
