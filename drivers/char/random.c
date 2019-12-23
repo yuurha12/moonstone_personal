@@ -352,11 +352,11 @@
 /*
  * Configuration information
  */
-#define INPUT_POOL_SHIFT 12
-#define INPUT_POOL_WORDS (1 << (INPUT_POOL_SHIFT - 5))
-#define OUTPUT_POOL_SHIFT 10
-#define OUTPUT_POOL_WORDS (1 << (OUTPUT_POOL_SHIFT - 5))
-#define EXTRACT_SIZE 10
+#define INPUT_POOL_SHIFT	12
+#define INPUT_POOL_WORDS	(1 << (INPUT_POOL_SHIFT-5))
+#define OUTPUT_POOL_SHIFT	10
+#define OUTPUT_POOL_WORDS	(1 << (OUTPUT_POOL_SHIFT-5))
+#define EXTRACT_SIZE		10
 
 #define LONGS(x) (((x) + sizeof(unsigned long) - 1) / sizeof(unsigned long))
 
@@ -745,6 +745,27 @@ retry:
 			crng_reseed(&primary_crng, r);
 			entropy_bits = ENTROPY_BITS(r);
 		}
+
+		/* initialize the blocking pool if necessary */
+		if (entropy_bits >= random_read_wakeup_bits &&
+		    !other->initialized) {
+			schedule_work(&other->push_work);
+			return;
+		}
+
+		/* should we wake readers? */
+		if (entropy_bits >= random_read_wakeup_bits &&
+		    wq_has_sleeper(&random_read_wait)) {
+			wake_up_interruptible(&random_read_wait);
+		}
+		/* If the input pool is getting full, and the blocking
+		 * pool has room, send some entropy to the blocking
+		 * pool.
+		 */
+		if (!work_pending(&other->push_work) &&
+		    (ENTROPY_BITS(r) > 6 * r->poolinfo->poolbytes) &&
+		    (ENTROPY_BITS(other) <= 6 * other->poolinfo->poolbytes))
+			schedule_work(&other->push_work);
 	}
 }
 
@@ -1846,23 +1867,6 @@ static ssize_t urandom_read_nowarn(struct file *file, char __user *buf,
 	return ret;
 }
 
-static ssize_t random_read(struct file *file, char __user *buf, size_t nbytes,
-			   loff_t *ppos)
-{
-	return _random_read(file->f_flags & O_NONBLOCK, buf, nbytes);
-}
-
-static ssize_t urandom_read_nowarn(struct file *file, char __user *buf,
-				   size_t nbytes, loff_t *ppos)
-{
-	int ret;
-
-	nbytes = min_t(size_t, nbytes, INT_MAX >> (ENTROPY_SHIFT + 3));
-	ret = extract_crng_user(buf, nbytes);
-	trace_urandom_read(8 * nbytes, 0, ENTROPY_BITS(&input_pool));
-	return ret;
-}
-
 static ssize_t urandom_read(struct file *file, char __user *buf, size_t nbytes,
 			    loff_t *ppos)
 {
@@ -1883,7 +1887,19 @@ static ssize_t urandom_read(struct file *file, char __user *buf, size_t nbytes,
 	return urandom_read_nowarn(file, buf, nbytes, ppos);
 }
 
-static __poll_t random_poll(struct file *file, poll_table *wait)
+static ssize_t
+random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+{
+	int ret;
+
+	ret = wait_for_random_bytes();
+	if (ret != 0)
+		return ret;
+	return urandom_read_nowarn(file, buf, nbytes, ppos);
+}
+
+static __poll_t
+random_poll(struct file *file, poll_table * wait)
 {
 	__poll_t mask;
 
