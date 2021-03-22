@@ -352,11 +352,11 @@
 /*
  * Configuration information
  */
-#define INPUT_POOL_SHIFT	12
-#define INPUT_POOL_WORDS	(1 << (INPUT_POOL_SHIFT-5))
-#define OUTPUT_POOL_SHIFT	10
-#define OUTPUT_POOL_WORDS	(1 << (OUTPUT_POOL_SHIFT-5))
-#define EXTRACT_SIZE		10
+#define INPUT_POOL_SHIFT 12
+#define INPUT_POOL_WORDS (1 << (INPUT_POOL_SHIFT - 5))
+#define OUTPUT_POOL_SHIFT 10
+#define OUTPUT_POOL_WORDS (1 << (OUTPUT_POOL_SHIFT - 5))
+#define EXTRACT_SIZE 10
 
 #define LONGS(x) (((x) + sizeof(unsigned long) - 1) / sizeof(unsigned long))
 
@@ -429,7 +429,7 @@ static const struct poolinfo {
 } poolinfo_table[] = {
 	/* was: x^128 + x^103 + x^76 + x^51 +x^25 + x + 1 */
 	/* x^128 + x^104 + x^76 + x^51 +x^25 + x + 1 */
-	{ S(128),	104,	76,	51,	25,	1 },
+	{ S(128), 104, 76, 51, 25, 1 },
 };
 
 /*
@@ -500,7 +500,6 @@ struct entropy_store {
 	unsigned short add_ptr;
 	unsigned short input_rotate;
 	int entropy_count;
-	unsigned int initialized : 1;
 	unsigned int last_data_init : 1;
 	__u8 last_data[EXTRACT_SIZE];
 };
@@ -513,16 +512,15 @@ static ssize_t _extract_entropy(struct entropy_store *r, void *buf,
 static void crng_reseed(struct crng_state *crng, struct entropy_store *r);
 static __u32 input_pool_data[INPUT_POOL_WORDS] __latent_entropy;
 
-static struct entropy_store input_pool = {
-	.poolinfo = &poolinfo_table[0],
-	.name = "input",
-	.lock = __SPIN_LOCK_UNLOCKED(input_pool.lock),
-	.pool = input_pool_data
-};
+static struct entropy_store input_pool = { .poolinfo = &poolinfo_table[0],
+					   .name = "input",
+					   .lock = __SPIN_LOCK_UNLOCKED(
+						   input_pool.lock),
+					   .pool = input_pool_data };
 
-static __u32 const twist_table[8] = {
-	0x00000000, 0x3b6e20c8, 0x76dc4190, 0x4db26158,
-	0xedb88320, 0xd6d6a3e8, 0x9b64c2b0, 0xa00ae278 };
+static __u32 const twist_table[8] = { 0x00000000, 0x3b6e20c8, 0x76dc4190,
+				      0x4db26158, 0xedb88320, 0xd6d6a3e8,
+				      0x9b64c2b0, 0xa00ae278 };
 
 /*
  * This function adds bytes into the entropy "pool".  It does not
@@ -672,7 +670,7 @@ static void process_random_ready_list(void)
  */
 static void credit_entropy_bits(struct entropy_store *r, int nbits)
 {
-	int entropy_count, orig, has_initialized = 0;
+	int entropy_count, orig;
 	const int pool_size = r->poolinfo->poolfracbits;
 	int nfrac = nbits << ENTROPY_SHIFT;
 
@@ -729,23 +727,14 @@ retry:
 	if (cmpxchg(&r->entropy_count, orig, entropy_count) != orig)
 		goto retry;
 
-	if (has_initialized) {
-		r->initialized = 1;
-		kill_fasync(&fasync, SIGIO, POLL_IN);
-	}
-
 	trace_credit_entropy_bits(r->name, nbits,
 				  entropy_count >> ENTROPY_SHIFT, _RET_IP_);
 
 	if (r == &input_pool) {
 		int entropy_bits = entropy_count >> ENTROPY_SHIFT;
 
-		if (crng_init < 2) {
-			if (entropy_bits < 128)
-				return;
+		if (crng_init < 2 && entropy_bits >= 128)
 			crng_reseed(&primary_crng, r);
-			entropy_bits = ENTROPY_BITS(r);
-		}
 	}
 }
 
@@ -795,9 +784,9 @@ early_param("random.trust_cpu", parse_trust_cpu);
 
 static bool crng_init_try_arch(struct crng_state *crng)
 {
-	int		i;
-	bool		arch_init = true;
-	unsigned long	rv;
+	int i;
+	bool arch_init = true;
+	unsigned long rv;
 
 	for (i = 4; i < 16; i++) {
 		if (!arch_get_random_seed_long(&rv) &&
@@ -813,9 +802,9 @@ static bool crng_init_try_arch(struct crng_state *crng)
 
 static bool __init crng_init_try_arch_early(struct crng_state *crng)
 {
-	int		i;
-	bool		arch_init = true;
-	unsigned long	rv;
+	int i;
+	bool arch_init = true;
+	unsigned long rv;
 
 	for (i = 4; i < 16; i++) {
 		if (!arch_get_random_seed_long_early(&rv) &&
@@ -869,8 +858,9 @@ static void crng_finalize_init(struct crng_state *crng)
 	kill_fasync(&fasync, SIGIO, POLL_IN);
 	pr_notice("crng init done\n");
 	if (unseeded_warning.missed) {
-		pr_notice("%d get_random_xx warning(s) missed due to ratelimiting\n",
-			  unseeded_warning.missed);
+		pr_notice(
+			"%d get_random_xx warning(s) missed due to ratelimiting\n",
+			unseeded_warning.missed);
 		unseeded_warning.missed = 0;
 	}
 	if (urandom_warning.missed) {
@@ -1291,13 +1281,13 @@ static __u32 get_reg(struct fast_pool *f, struct pt_regs *regs)
 
 void add_interrupt_randomness(int irq, int irq_flags)
 {
-	struct entropy_store	*r;
-	struct fast_pool	*fast_pool = this_cpu_ptr(&irq_randomness);
-	struct pt_regs		*regs = get_irq_regs();
-	unsigned long		now = jiffies;
-	cycles_t		cycles = random_get_entropy();
-	__u32			c_high, j_high;
-	__u64			ip;
+	struct entropy_store *r;
+	struct fast_pool *fast_pool = this_cpu_ptr(&irq_randomness);
+	struct pt_regs *regs = get_irq_regs();
+	unsigned long now = jiffies;
+	cycles_t cycles = random_get_entropy();
+	__u32 c_high, j_high;
+	__u64 ip;
 
 	if (cycles == 0)
 		cycles = get_reg(fast_pool, regs);
@@ -1385,8 +1375,8 @@ retry:
 		ibytes = 0;
 
 	if (WARN_ON(entropy_count < 0)) {
-		pr_warn("negative entropy count: pool %s count %d\n",
-			r->name, entropy_count);
+		pr_warn("negative entropy count: pool %s count %d\n", r->name,
+			entropy_count);
 		entropy_count = 0;
 	}
 	nfrac = ibytes << (ENTROPY_SHIFT + 3);
@@ -1408,8 +1398,7 @@ retry:
 }
 
 /*
- * This function does the actual extraction for extract_entropy and
- * extract_entropy_user.
+ * This function does the actual extraction for extract_entropy.
  *
  * Note: we assume that .poolwords is a multiple of 16 words.
  */
@@ -1533,8 +1522,8 @@ static ssize_t extract_entropy(struct entropy_store *r, void *buf,
 	return _extract_entropy(r, buf, nbytes, fips_enabled);
 }
 
-#define warn_unseeded_randomness(previous) \
-	_warn_unseeded_randomness(__func__, (void *) _RET_IP_, (previous))
+#define warn_unseeded_randomness(previous)                                     \
+	_warn_unseeded_randomness(__func__, (void *)_RET_IP_, (previous))
 
 static void _warn_unseeded_randomness(const char *func_name, void *caller,
 				      void **previous)
@@ -1874,8 +1863,9 @@ static ssize_t urandom_read(struct file *file, char __user *buf, size_t nbytes,
 				"%s: uninitialized urandom read (%zd bytes read)\n",
 				current->comm, nbytes);
 =======
-			pr_notice("%s: uninitialized urandom read (%zd bytes read)\n",
-				  current->comm, nbytes);
+			pr_notice(
+				"%s: uninitialized urandom read (%zd bytes read)\n",
+				current->comm, nbytes);
 >>>>>>> 2c53d6d6a7be2 (random: Add and use pr_fmt())
 		spin_lock_irqsave(&primary_crng.lock, flags);
 		crng_init_cnt = 0;
@@ -1885,8 +1875,8 @@ static ssize_t urandom_read(struct file *file, char __user *buf, size_t nbytes,
 	return urandom_read_nowarn(file, buf, nbytes, ppos);
 }
 
-static ssize_t
-random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+static ssize_t random_read(struct file *file, char __user *buf, size_t nbytes,
+			   loff_t *ppos)
 {
 	int ret;
 
@@ -1896,8 +1886,7 @@ random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 	return urandom_read_nowarn(file, buf, nbytes, ppos);
 }
 
-static __poll_t
-random_poll(struct file *file, poll_table * wait)
+static __poll_t random_poll(struct file *file, poll_table *wait)
 {
 	__poll_t mask;
 
