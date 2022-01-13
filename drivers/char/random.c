@@ -363,8 +363,6 @@
  */
 #define INPUT_POOL_SHIFT 12
 #define INPUT_POOL_WORDS (1 << (INPUT_POOL_SHIFT - 5))
-#define OUTPUT_POOL_SHIFT 10
-#define OUTPUT_POOL_WORDS (1 << (OUTPUT_POOL_SHIFT - 5))
 #define EXTRACT_SIZE (BLAKE2S_HASH_SIZE / 2)
 
 /*
@@ -382,7 +380,7 @@
  * should wake up processes which are selecting or polling on write
  * access to /dev/random.
  */
-static int random_write_wakeup_bits = 28 * OUTPUT_POOL_WORDS;
+static int random_write_wakeup_bits = 28 * (1 << 5);
 
 /*
  * Originally, we used a primitive polynomial of degree .poolwords
@@ -516,10 +514,8 @@ static struct {
 	u16 add_ptr;
 	u16 input_rotate;
 	int entropy_count;
-} input_pool = {
-	.lock = __SPIN_LOCK_UNLOCKED(input_pool.lock),
-	.pool = input_pool_data
-};
+} input_pool = { .lock = __SPIN_LOCK_UNLOCKED(input_pool.lock),
+		 .pool = input_pool_data };
 
 static ssize_t extract_entropy(void *buf, size_t nbytes, int min);
 static ssize_t _extract_entropy(void *buf, size_t nbytes);
@@ -726,7 +722,8 @@ retry:
 	if (cmpxchg(&input_pool.entropy_count, orig, entropy_count) != orig)
 		goto retry;
 
-	trace_credit_entropy_bits(nbits, entropy_count >> ENTROPY_SHIFT, _RET_IP_);
+	trace_credit_entropy_bits(nbits, entropy_count >> ENTROPY_SHIFT,
+				  _RET_IP_);
 
 	entropy_bits = entropy_count >> ENTROPY_SHIFT;
 	if (crng_init < 2 && entropy_bits >= 128)
@@ -1199,7 +1196,7 @@ static void add_timer_randomness(struct timer_rand_state *state, unsigned num)
 	 * Round down by 1 bit on general principles,
 	 * and limit entropy estimate to 12 bits.
 	 */
-	credit_entropy_bits(min_t(int, fls(delta>>1), 11));
+	credit_entropy_bits(min_t(int, fls(delta >> 1), 11));
 }
 
 void add_input_randomness(unsigned int type, unsigned int code,
@@ -1258,12 +1255,12 @@ static u32 get_reg(struct fast_pool *f, struct pt_regs *regs)
 
 void add_interrupt_randomness(int irq)
 {
-	struct fast_pool	*fast_pool = this_cpu_ptr(&irq_randomness);
-	struct pt_regs		*regs = get_irq_regs();
-	unsigned long		now = jiffies;
-	cycles_t		cycles = random_get_entropy();
-	u32			c_high, j_high;
-	u64			ip;
+	struct fast_pool *fast_pool = this_cpu_ptr(&irq_randomness);
+	struct pt_regs *regs = get_irq_regs();
+	unsigned long now = jiffies;
+	cycles_t cycles = random_get_entropy();
+	u32 c_high, j_high;
+	u64 ip;
 
 	if (cycles == 0)
 		cycles = get_reg(fast_pool, regs);
@@ -1558,7 +1555,7 @@ static void try_to_generate_entropy(void)
 	timer_setup_on_stack(&stack.timer, entropy_timer, 0);
 	while (!crng_ready()) {
 		if (!timer_pending(&stack.timer))
-			mod_timer(&stack.timer, jiffies+1);
+			mod_timer(&stack.timer, jiffies + 1);
 		mix_pool_bytes(&stack.now, sizeof(stack.now));
 		schedule();
 		stack.now = random_get_entropy();
@@ -1821,8 +1818,7 @@ static __poll_t random_poll(struct file *file, poll_table *wait)
 	return mask;
 }
 
-static int
-write_pool(const char __user *buffer, size_t count)
+static int write_pool(const char __user *buffer, size_t count)
 {
 	size_t bytes;
 	u32 t, buf[16];
@@ -2239,8 +2235,9 @@ void add_hwgenerator_randomness(const char *buffer, size_t count,
 	 * or when the calling thread is about to terminate.
 	 */
 	wait_event_interruptible(random_write_wait,
-			!system_wq || kthread_should_stop() ||
-			ENTROPY_BITS() <= random_write_wakeup_bits);
+				 !system_wq || kthread_should_stop() ||
+					 ENTROPY_BITS() <=
+						 random_write_wakeup_bits);
 	mix_pool_bytes(buffer, count);
 	credit_entropy_bits(entropy);
 }
