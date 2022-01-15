@@ -124,7 +124,7 @@
  *
  * The primary kernel interface is
  *
- * 	void get_random_bytes(void *buf, int nbytes);
+ *	void get_random_bytes(void *buf, int nbytes);
  *
  * This interface will return the requested number of random bytes,
  * and place it in the requested buffer.  This is equivalent to a
@@ -132,10 +132,10 @@
  *
  * For less critical applications, there are the functions:
  *
- * 	u32 get_random_u32()
- * 	u64 get_random_u64()
- * 	unsigned int get_random_int()
- * 	unsigned long get_random_long()
+ *	u32 get_random_u32()
+ *	u64 get_random_u64()
+ *	unsigned int get_random_int()
+ *	unsigned long get_random_long()
  *
  * These are produced by a cryptographic RNG seeded from get_random_bytes,
  * and so do not deplete the entropy pool as much.  These are recommended
@@ -197,10 +197,10 @@
  * from the devices are:
  *
  *	void add_device_randomness(const void *buf, unsigned int size);
- * 	void add_input_randomness(unsigned int type, unsigned int code,
+ *	void add_input_randomness(unsigned int type, unsigned int code,
  *                                unsigned int value);
  *	void add_interrupt_randomness(int irq);
- * 	void add_disk_randomness(struct gendisk *disk);
+ *	void add_disk_randomness(struct gendisk *disk);
  *	void add_hwgenerator_randomness(const char *buffer, size_t count,
  *					size_t entropy);
  *	void add_bootloader_randomness(const void *buf, unsigned int size);
@@ -296,8 +296,8 @@
  * /dev/random and /dev/urandom created already, they can be created
  * by using the commands:
  *
- * 	mknod /dev/random c 1 8
- * 	mknod /dev/urandom c 1 9
+ *	mknod /dev/random c 1 8
+ *	mknod /dev/urandom c 1 9
  *
  * Acknowledgements:
  * =================
@@ -509,7 +509,7 @@ static ssize_t _extract_entropy(void *buf, size_t nbytes);
 
 static void crng_reseed(struct crng_state *crng, bool use_input_pool);
 
-static u32 const twist_table[8] = { 0x00000000, 0x3b6e20c8, 0x76dc4190,
+static const u32 twist_table[8] = { 0x00000000, 0x3b6e20c8, 0x76dc4190,
 				    0x4db26158, 0xedb88320, 0xd6d6a3e8,
 				    0x9b64c2b0, 0xa00ae278 };
 
@@ -1462,9 +1462,10 @@ static void _warn_unseeded_randomness(const char *func_name, void *caller,
 	print_once = true;
 #endif
 	if (__ratelimit(&unseeded_warning))
-		printk_deferred(KERN_NOTICE "random: %s called from %pS "
-					    "with crng_init=%d\n",
-				func_name, caller, crng_init);
+		printk_deferred(
+			KERN_NOTICE
+			"random: %s called from %pS with crng_init=%d\n",
+			func_name, caller, crng_init);
 }
 
 /*
