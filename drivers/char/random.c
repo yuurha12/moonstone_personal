@@ -260,6 +260,7 @@ static struct {
 };
 
 static void extract_entropy(void *buf, size_t nbytes);
+static bool drain_entropy(void *buf, size_t nbytes);
 
 static void crng_reseed(void);
 
@@ -299,8 +300,8 @@ struct fast_pool {
  */
 static void fast_mix(u32 pool[4])
 {
-	u32 a = pool[0],	b = pool[1];
-	u32 c = pool[2],	d = pool[3];
+	u32 a = pool[0], b = pool[1];
+	u32 c = pool[2], d = pool[3];
 
 	a += b;
 	c += d;
@@ -330,8 +331,10 @@ static void fast_mix(u32 pool[4])
 	d ^= a;
 	b ^= c;
 
-	pool[0] = a;  pool[1] = b;
-	pool[2] = c;  pool[3] = d;
+	pool[0] = a;
+	pool[1] = b;
+	pool[2] = c;
+	pool[3] = d;
 }
 
 static void process_random_ready_list(void)
@@ -466,24 +469,13 @@ static void crng_slow_load(const void *cp, size_t len)
 static void crng_reseed(void)
 {
 	unsigned long flags;
-	int entropy_count;
 	unsigned long next_gen;
 	u8 key[CHACHA_KEY_SIZE];
 	bool finalize_init = false;
 
-	/*
-	 * First we make sure we have POOL_MIN_BITS of entropy in the pool,
-	 * and then we drain all of it. Only then can we extract a new key.
-	 */
-	do {
-		entropy_count = READ_ONCE(input_pool.entropy_count);
-		if (entropy_count < POOL_MIN_BITS)
-			return;
-	} while (cmpxchg(&input_pool.entropy_count, entropy_count, 0) !=
-		 entropy_count);
-	extract_entropy(key, sizeof(key));
-	wake_up_interruptible(&random_write_wait);
-	kill_fasync(&fasync, SIGIO, POLL_OUT);
+	/* Only reseed if we can, to prevent brute forcing a small amount of new bits. */
+	if (!drain_entropy(key, sizeof(key)))
+		return;
 
 	/*
 	 * We copy the new key into the base_crng, overwriting the old one,
@@ -818,9 +810,11 @@ void add_interrupt_randomness(int irq)
 	}
 
 	if (sizeof(unsigned long) == 8)
-		fast_pool->pool64[1] ^= regs ? instruction_pointer(regs) : _RET_IP_;
+		fast_pool->pool64[1] ^=
+			regs ? instruction_pointer(regs) : _RET_IP_;
 	else {
-		fast_pool->pool32[2] ^= regs ? instruction_pointer(regs) : _RET_IP_;
+		fast_pool->pool32[2] ^=
+			regs ? instruction_pointer(regs) : _RET_IP_;
 		fast_pool->pool32[3] ^= get_reg(fast_pool, regs);
 	}
 
@@ -829,11 +823,13 @@ void add_interrupt_randomness(int irq)
 
 	if (unlikely(crng_init == 0)) {
 		if (fast_pool->count >= 64 &&
-		    crng_fast_load(fast_pool->pool32, sizeof(fast_pool->pool32)) > 0) {
+		    crng_fast_load(fast_pool->pool32,
+				   sizeof(fast_pool->pool32)) > 0) {
 			fast_pool->count = 0;
 			fast_pool->last = now;
 			if (spin_trylock(&input_pool.lock)) {
-				_mix_pool_bytes(&fast_pool->pool32, sizeof(fast_pool->pool32));
+				_mix_pool_bytes(&fast_pool->pool32,
+						sizeof(fast_pool->pool32));
 				spin_unlock(&input_pool.lock);
 			}
 		}
@@ -921,6 +917,26 @@ static void extract_entropy(void *buf, size_t nbytes)
 
 	memzero_explicit(seed, sizeof(seed));
 	memzero_explicit(&block, sizeof(block));
+}
+
+/*
+ * First we make sure we have POOL_MIN_BITS of entropy in the pool, and then we
+ * set the entropy count to zero (but don't actually touch any data). Only then
+ * can we extract a new key with extract_entropy().
+ */
+static bool drain_entropy(void *buf, size_t nbytes)
+{
+	unsigned int entropy_count;
+	do {
+		entropy_count = READ_ONCE(input_pool.entropy_count);
+		if (entropy_count < POOL_MIN_BITS)
+			return false;
+	} while (cmpxchg(&input_pool.entropy_count, entropy_count, 0) !=
+		 entropy_count);
+	extract_entropy(buf, nbytes);
+	wake_up_interruptible(&random_write_wait);
+	kill_fasync(&fasync, SIGIO, POLL_OUT);
+	return true;
 }
 
 #define warn_unseeded_randomness(previous)                                     \
