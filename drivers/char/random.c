@@ -1688,6 +1688,13 @@ static int proc_do_uuid(struct ctl_table *table, int write, void __user *buffer,
 	return proc_dostring(&fake_table, 0, buffer, lenp, ppos);
 }
 
+/* The same as proc_dointvec, but writes don't change anything. */
+static int proc_do_rointvec(struct ctl_table *table, int write, void __user *buffer,
+			    size_t *lenp, loff_t *ppos)
+{
+	return write ? 0 : proc_dointvec(table, 0, buffer, lenp, ppos);
+}
+
 extern struct ctl_table random_table[];
 struct ctl_table random_table[] = {
 	{
@@ -1705,18 +1712,18 @@ struct ctl_table random_table[] = {
 		.proc_handler = proc_dointvec,
 	},
 	{
-		.procname = "write_wakeup_threshold",
-		.data = &sysctl_random_write_wakeup_bits,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = proc_dointvec,
+		.procname	= "write_wakeup_threshold",
+		.data		= &sysctl_random_write_wakeup_bits,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_do_rointvec,
 	},
 	{
-		.procname = "urandom_min_reseed_secs",
-		.data = &sysctl_random_min_urandom_seed,
-		.maxlen = sizeof(int),
-		.mode = 0644,
-		.proc_handler = proc_dointvec,
+		.procname	= "urandom_min_reseed_secs",
+		.data		= &sysctl_random_min_urandom_seed,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_do_rointvec,
 	},
 	{
 		.procname	= "boot_id",
