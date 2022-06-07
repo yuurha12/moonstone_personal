@@ -85,9 +85,9 @@ static DEFINE_STATIC_KEY_FALSE(crng_is_ready);
 	(static_branch_likely(&crng_is_ready) || crng_init >= CRNG_READY)
 =======
 #define crng_ready() (likely(crng_init >= CRNG_READY))
->>>>>>> 61f87ea3f9572 (Revert "random: use static branch for crng_ready()")
-/* Various types of waiters for crng_init->CRNG_READY transition. */
-static DECLARE_WAIT_QUEUE_HEAD(crng_init_wait);
+	>>>>>>> 61f87ea3f9572 (Revert "random: use static branch for crng_ready()")
+	/* Various types of waiters for crng_init->CRNG_READY transition. */
+	static DECLARE_WAIT_QUEUE_HEAD(crng_init_wait);
 static struct fasync_struct *fasync;
 static DEFINE_SPINLOCK(random_ready_chain_lock);
 static RAW_NOTIFIER_HEAD(random_ready_chain);
@@ -794,8 +794,8 @@ static void __cold _credit_init_bits(size_t bits)
  *
  **********************************************************************/
 
-static bool trust_cpu __ro_after_init = IS_ENABLED(CONFIG_RANDOM_TRUST_CPU);
-static bool trust_bootloader __ro_after_init =
+static bool trust_cpu __initdata = IS_ENABLED(CONFIG_RANDOM_TRUST_CPU);
+static bool trust_bootloader __initdata =
 	IS_ENABLED(CONFIG_RANDOM_TRUST_BOOTLOADER);
 static int __init parse_trust_cpu(char *arg)
 {
@@ -893,13 +893,12 @@ EXPORT_SYMBOL_GPL(add_hwgenerator_randomness);
  * Handle random seed passed by bootloader, and credit it if
  * CONFIG_RANDOM_TRUST_BOOTLOADER is set.
  */
-void __cold add_bootloader_randomness(const void *buf, size_t len)
+void __init add_bootloader_randomness(const void *buf, size_t len)
 {
 	mix_pool_bytes(buf, len);
 	if (trust_bootloader)
 		credit_init_bits(len * 8);
 }
-EXPORT_SYMBOL_GPL(add_bootloader_randomness);
 
 struct fast_pool {
 	struct work_struct mix;
