@@ -5,6 +5,15 @@
 #include <linux/dma-mapping.h>
 #include <asm/pgtable.h>
 
+#ifndef DMA_ATTR_FORCE_NON_COHERENT
+#define DMA_ATTR_FORCE_NON_COHERENT	(1UL << 0)
+#endif
+
+#ifndef DMA_ATTR_FORCE_COHERENT
+#define DMA_ATTR_FORCE_COHERENT		(1UL << 1)
+#endif
+
+
 #ifdef CONFIG_ARCH_HAS_DMA_COHERENCE_H
 #include <asm/dma-coherence.h>
 #elif defined(CONFIG_ARCH_HAS_SYNC_DMA_FOR_DEVICE) || \
