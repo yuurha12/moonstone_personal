@@ -82,11 +82,29 @@ static int __msg_submit(struct mbox_chan *chan)
 exit:
 	spin_unlock_irqrestore(&chan->lock, flags);
 
+	return err;
+}
+
+static void msg_submit(struct mbox_chan *chan)
+{
+	int err = 0;
+
+	/*
+	 * If the controller returns -EAGAIN, then it means, our spinlock
+	 * here is preventing the controller from receiving its interrupt,
+	 * that would help clear the controller channels that are currently
+	 * blocked waiting on the interrupt response.
+	 * Retry again.
+	 */
+	do {
+		err = __msg_submit(chan);
+	} while (err == -EAGAIN);
+
+	/* kick start the timer immediately to avoid delays */
 	if (!err && (chan->txdone_method & TXDONE_BY_POLL)) {
-		/* kick start the timer immediately to avoid delays */
-		spin_lock_irqsave(&chan->mbox->poll_hrt_lock, flags);
-		hrtimer_start(&chan->mbox->poll_hrt, 0, HRTIMER_MODE_REL);
-		spin_unlock_irqrestore(&chan->mbox->poll_hrt_lock, flags);
+		/* but only if not already active */
+		if (!hrtimer_active(&chan->mbox->poll_hrt))
+			hrtimer_start(&chan->mbox->poll_hrt, 0, HRTIMER_MODE_REL);
 	}
 }
 
@@ -120,27 +138,20 @@ static enum hrtimer_restart txdone_hrtimer(struct hrtimer *hrtimer)
 		container_of(hrtimer, struct mbox_controller, poll_hrt);
 	bool txdone, resched = false;
 	int i;
-	unsigned long flags;
 
 	for (i = 0; i < mbox->num_chans; i++) {
 		struct mbox_chan *chan = &mbox->chans[i];
 
 		if (chan->active_req && chan->cl) {
+			resched = true;
 			txdone = chan->mbox->ops->last_tx_done(chan);
 			if (txdone)
 				tx_tick(chan, 0);
-			else
-				resched = true;
 		}
 	}
 
 	if (resched) {
-		spin_lock_irqsave(&mbox->poll_hrt_lock, flags);
-		if (!hrtimer_is_queued(hrtimer))
-			hrtimer_forward_now(hrtimer,
-					    ms_to_ktime(mbox->txpoll_period));
-		spin_unlock_irqrestore(&mbox->poll_hrt_lock, flags);
-
+		hrtimer_forward_now(hrtimer, ms_to_ktime(mbox->txpoll_period));
 		return HRTIMER_RESTART;
 	}
 	return HRTIMER_NORESTART;
@@ -178,7 +189,7 @@ void mbox_chan_txdone(struct mbox_chan *chan, int r)
 {
 	if (unlikely(!(chan->txdone_method & TXDONE_BY_IRQ))) {
 		dev_err(chan->mbox->dev,
-			"Controller can't run the TX ticker\n");
+		       "Controller can't run the TX ticker\n");
 		return;
 	}
 
@@ -351,15 +362,15 @@ struct mbox_chan *mbox_request_channel(struct mbox_client *cl, int index)
 
 	mutex_lock(&con_mutex);
 
-	if (of_parse_phandle_with_args(dev->of_node, "mboxes", "#mbox-cells",
-				       index, &spec)) {
+	if (of_parse_phandle_with_args(dev->of_node, "mboxes",
+				       "#mbox-cells", index, &spec)) {
 		dev_dbg(dev, "%s: can't parse \"mboxes\" property\n", __func__);
 		mutex_unlock(&con_mutex);
 		return ERR_PTR(-ENODEV);
 	}
 
 	chan = ERR_PTR(-EPROBE_DEFER);
-	list_for_each_entry (mbox, &mbox_cons, node)
+	list_for_each_entry(mbox, &mbox_cons, node)
 		if (mbox->dev->of_node == spec.np) {
 			chan = mbox->of_xlate(mbox, &spec);
 			if (!IS_ERR(chan))
@@ -386,7 +397,7 @@ struct mbox_chan *mbox_request_channel(struct mbox_client *cl, int index)
 	chan->cl = cl;
 	init_completion(&chan->tx_complete);
 
-	if (chan->txdone_method == TXDONE_BY_POLL && cl->knows_txdone)
+	if (chan->txdone_method	== TXDONE_BY_POLL && cl->knows_txdone)
 		chan->txdone_method = TXDONE_BY_ACK;
 
 	spin_unlock_irqrestore(&chan->lock, flags);
@@ -420,12 +431,12 @@ struct mbox_chan *mbox_request_channel_byname(struct mbox_client *cl,
 	}
 
 	if (!of_get_property(np, "mbox-names", NULL)) {
-		dev_err(cl->dev, "%s() requires an \"mbox-names\" property\n",
-			__func__);
+		dev_err(cl->dev,
+			"%s() requires an \"mbox-names\" property\n", __func__);
 		return ERR_PTR(-EINVAL);
 	}
 
-	of_property_for_each_string (np, "mbox-names", prop, mbox_name) {
+	of_property_for_each_string(np, "mbox-names", prop, mbox_name) {
 		if (!strncmp(name, mbox_name, strlen(name)))
 			return mbox_request_channel(cl, index);
 		index++;
@@ -464,8 +475,9 @@ void mbox_free_channel(struct mbox_chan *chan)
 }
 EXPORT_SYMBOL_GPL(mbox_free_channel);
 
-static struct mbox_chan *of_mbox_index_xlate(struct mbox_controller *mbox,
-					     const struct of_phandle_args *sp)
+static struct mbox_chan *
+of_mbox_index_xlate(struct mbox_controller *mbox,
+		    const struct of_phandle_args *sp)
 {
 	int ind = sp->args[0];
 
@@ -497,6 +509,7 @@ int mbox_controller_register(struct mbox_controller *mbox)
 		txdone = TXDONE_BY_ACK;
 
 	if (txdone == TXDONE_BY_POLL) {
+
 		if (!mbox->ops->last_tx_done) {
 			dev_err(mbox->dev, "last_tx_done method is absent\n");
 			return -EINVAL;
@@ -505,7 +518,6 @@ int mbox_controller_register(struct mbox_controller *mbox)
 		hrtimer_init(&mbox->poll_hrt, CLOCK_MONOTONIC,
 			     HRTIMER_MODE_REL);
 		mbox->poll_hrt.function = txdone_hrtimer;
-		spin_lock_init(&mbox->poll_hrt_lock);
 	}
 
 	for (i = 0; i < mbox->num_chans; i++) {
@@ -616,8 +628,7 @@ EXPORT_SYMBOL_GPL(devm_mbox_controller_register);
  * controller on driver probe failure or driver removal. It's typically not
  * necessary to call this function.
  */
-void devm_mbox_controller_unregister(struct device *dev,
-				     struct mbox_controller *mbox)
+void devm_mbox_controller_unregister(struct device *dev, struct mbox_controller *mbox)
 {
 	WARN_ON(devres_release(dev, __devm_mbox_controller_unregister,
 			       devm_mbox_controller_match, mbox));

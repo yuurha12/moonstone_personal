@@ -815,7 +815,7 @@ static const uint8_t MI_CA_PUBLIC_Y[] =
   0xf1, 0xf6, 0xf3, 0x17, 0x0c, 0x60, 0xc7, 0x8a
 };
 
-extern void get_random_bytes(void *buf, int len);
+extern void get_random_bytes(void *buf, size_t len);
 
 /*
  * Authenticate Battery

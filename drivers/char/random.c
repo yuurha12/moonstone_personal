@@ -79,19 +79,14 @@ static enum {
 	CRNG_EARLY = 1, /* At least POOL_EARLY_BITS collected */
 	CRNG_READY = 2 /* Fully initialized with POOL_READY_BITS collected */
 } crng_init __read_mostly = CRNG_EMPTY;
-<<<<<<< HEAD
 static DEFINE_STATIC_KEY_FALSE(crng_is_ready);
-#define crng_ready()                                                           \
-	(static_branch_likely(&crng_is_ready) || crng_init >= CRNG_READY)
-=======
-#define crng_ready() (likely(crng_init >= CRNG_READY))
-	>>>>>>>
-	61f87ea3f9572(Revert "random: use static branch for crng_ready()")
-	/* Various types of waiters for crng_init->CRNG_READY transition. */
-	static DECLARE_WAIT_QUEUE_HEAD(crng_init_wait);
+static DECLARE_WAIT_QUEUE_HEAD(crng_init_wait);
 static struct fasync_struct *fasync;
 static DEFINE_SPINLOCK(random_ready_chain_lock);
 static RAW_NOTIFIER_HEAD(random_ready_chain);
+
+#define crng_ready() (likely(crng_init >= CRNG_READY))
+
 
 /* Control how we warn userspace. */
 static struct ratelimit_state urandom_warning =
