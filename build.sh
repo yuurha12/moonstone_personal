@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright cc 2022 anothermi
+# Copyright cc 2023 ethelious
 
 function clear_directory() {
     local directory="$1"
@@ -24,7 +24,7 @@ function init() {
 # Main 
 function compile() {
     export PATH="/home/toolchains/proton-clang/bin:$PATH"
-    make -j$(nproc --all) O=out ARCH=arm64 new_defconfig
+    make -j$(nproc --all) O=out ARCH=arm64 SM6375_defconfig
     make -j$(nproc --all) ARCH=arm64 O=out CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 }
 
